@@ -1,0 +1,239 @@
+server:
+  port: 9510
+    config.server.git.uri=
+  servlet:
+    context-path: '/api'
+  shutdown: graceful
+
+management:
+  server:
+    port: 9511
+    base-path: /
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState
+    health.show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+
+logging:
+  level:
+    root: debug
+    javax: error
+    sun: error
+    netflix: error
+    jdk: error
+    io:
+      github:
+        resilience4j: error
+    feign: error
+    com:
+      netfix: error
+      beancounter: debug
+      zaxxer: error
+    org:
+      springframework: error
+      springframework.scheduling: info
+      #      springframework.security: trace
+      hibernate: error
+      apache: error
+      postgres: error
+      postgresql: error
+
+auth:
+  uri: "http://your-auth0-endpoint/"
+  audience: "auth0-audience"
+  enabled: true
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${auth.uri}
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
+  application:
+    name: bc-data
+  cache:
+    cache-names: asset.prices, asset.search, fx.rates, providers, asset.ext, currency.code, currency.all, jwt.token
+  jpa:
+    open-in-view: false
+    generate-ddl: true
+  datasource:
+    username: sa
+    password:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: bc-data
+
+
+kafka:
+  enabled: false
+
+beancounter:
+  currency:
+    base: "USD"
+    values:
+      - code: GBP
+        name: Pound
+        symbol: "£"
+
+      - code: USD
+        name: Dollar
+        symbol: "$"
+
+      - code: NZD
+        name: Dollar
+        symbol: "$"
+
+      - code: AUD
+        name: Dollar
+        symbol: "$"
+
+      - code: EUR
+        name: Euro
+        symbol: "€"
+
+      - code: SGD
+        name: Dollar
+        symbol: "$"
+  asset.categories:
+    default: Equity
+    values:
+      - id: EQUITY
+        name: Equity
+      - id: MUTUAL FUND
+        name: Mutual Fund
+      - id: ETF
+        name: Exchange Traded Fund
+      - id: CASH
+        name: Cash
+      - id: RE
+        name: Real Estate
+
+  # Default asset enricher - FIGI/ALPHA - can be set on a per market basis
+  enricher: ALPHA
+  market:
+    values:
+      - code: CASH
+        timezoneId: UTC
+        enricher: DEFAULT
+        type: Internal
+
+      - code: CUSTOM
+        timezoneId: UTC
+        enricher: DEFAULT
+        type: Community
+
+      - code: NASDAQ
+        timezoneId: US/Eastern
+        currencyId: USD
+        aliases:
+          SHARESIGHT: NAS
+          FIGI: US
+
+      - code: NYSE
+        timezoneId: US/Eastern
+        currencyId: USD
+        aliases:
+          SHARESIGHT: NYS
+          FIGI: US
+
+      - code: AMEX
+        timezoneId: US/Eastern
+        currencyId: USD
+        aliases:
+          FIGI: US
+
+      - code: ASX
+        timezoneId: Australia/Sydney
+        currencyId: AUD
+        aliases:
+          WTD: AX
+          FIGI: AU
+
+      - code: NZX
+        timezoneId: Pacific/Auckland
+        currencyId: NZD
+        aliases:
+          WTD: NZ
+          ALPHA: NZ
+          FIGI: NZ
+
+      - code: SGX
+        currencyId: SGD
+        timezoneId: Asia/Singapore
+        aliases:
+          FIGI: SG
+
+      - code: LON
+        # UK assets priced in pence.
+        currencyId: GBP
+        timezoneId: Europe/London
+        multiplier: .01
+    providers:
+      # ToDo: default provider
+      ALPHA:
+        url: https://www.alphavantage.co
+        batchSize: 1
+        markets: NASDAQ,AMEX,NYSE,ASX,LON,NZX
+
+      WTD:
+        url: https://www.worldtradingdata.com
+        batchSize: 2
+        markets:
+
+      CUSTOM:
+        batchSize: 1
+        markets: CUSTOM
+
+
+resilience4j:
+  ratelimiter:
+    instances:
+      figi:
+        registerHealthIndicator: false
+        limitForPeriod: 60
+        limitRefreshPeriod: 65s
+        timeoutDuration: 80s
+        eventConsumerBufferSize: 200
+      alphaVantage:
+        registerHealthIndicator: false
+        limitForPeriod: 30
+        limitRefreshPeriod: 60s
+        timeoutDuration: 70s
+        eventConsumerBufferSize: 200
+      fxRates:
+        registerHealthIndicator: false
+        limitForPeriod: 5
+        limitRefreshPeriod: PT2S
+        timeoutDuration: PT5S
+        eventConsumerBufferSize: 200
+
+  circuitbreaker:
+    configs:
+      default:
+        failureRateThreshold: 3
+        slidingWindowSize: 10
+        permittedNumberOfCallsInHalfOpenState: 3
+        slidingWindowType: TIME_BASED
+        waitDurationInOpenState: 5s
+        registerHealthIndicator: true
+        recordFailurePredicate: com.beancounter.common.exception.RecordFailurePredicate
+  retry:
+    instances:
+      backend:
+        maxRetryAttempts: 3
+        waitDuration: PT10S
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
